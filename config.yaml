@@ -1,8 +1,0 @@
-endpoint: "https://api.bybit.com"
-domain: "bybit"
-api: "Q7hUt22dcmeh63vVNS"
-secret: "mzoKDEPcOc8etT3MUx1xGgdpk4cKnUk4Y6Jc"
-funding_times:
-  - "03:00:00"
-  - "12:00:00"
-  - "19:00:00"
