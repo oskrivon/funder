@@ -4,12 +4,8 @@ from pybit import usdt_perpetual
 
 
 class Connector:
-    def __init__(self, api_key, api_secret, endpoint) -> None:
-        self.session_auth = usdt_perpetual.HTTP(
-            endpoint=endpoint,
-            api_key=api_key,
-            api_secret=api_secret
-        )
+    def __init__(self, session) -> None:
+        self.session_auth = session
 
         print('>>> connector init')
 
@@ -52,18 +48,24 @@ class Connector:
 if __name__ == '__main__':
     with open('config.yaml') as f:
         cfg = yaml.safe_load(f)
+    
+    session = usdt_perpetual.HTTP(
+        endpoint=cfg['endpoint'],
+        api_key=cfg['api'],
+        api_secret=cfg['secret']
+    )
 
     print(cfg)
-    connector = Connector(cfg['api'], cfg['secret'], cfg['endpoint'])
+    connector = Connector(session)
     quotation = 'USDT'
     #print(connector.create_trade('1000BTTUSDT', 'Buy', 1000, False, False))
-    #print(connector.create_trade('1000BTTUSDT', 'Sell', 1000, False, False))
+    #print(connector.create_trade('CTCUSDT', 'Sell', 10, False, False))
     #print('_____')
     #print(connector.get_wallet_balance(quotation)['result'][quotation]['available_balance'])
     #print('_____')
     #print(connector.create_trade('DGBUSDT', 'Buy', 100, False, False))
     #print('_____')
     #print(connector.get_wallet_balance(quotation)['result'][quotation]['available_balance'])
-    #print(connector.get_wallet_balance('USDT'))
-    #print(connector.get_wallet_funds_records())
-    pprint.pprint(connector.get_fundings_history('1000BTTUSDT')['result'])
+    pprint.pprint(connector.get_wallet_balance('USDT'))
+    #pprint.pprint(connector.get_wallet_funds_records())
+    pprint.pprint(connector.get_fundings_history('CTCUSDT')['result'])

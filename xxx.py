@@ -1,23 +1,24 @@
 import yaml
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
+import time
+
+import schedule
+
+import entry_points_comput as epc
 
 
 with open('config.yaml') as f:
     cfg = yaml.safe_load(f)
 
-delta = 2
+def job():
+    print("I'm working...")
 
-print(cfg)
+entry_points = epc.entry_points_comput(cfg['funding_times'], cfg['offset'])
+print(entry_points)
+for point in entry_points:
+    schedule.every().day.at(point).do(job)
+    print('ok')
 
-now = datetime.now()
-
-funding_time = datetime.strptime(cfg['funding_times'][1], "%H:%M:%S")
-funding_date = datetime(now.year, now.month, now.day, funding_time.hour, funding_time.minute, funding_time.second)
-print(funding_date)
-
-td = funding_date - now
-print(td)
-#entry_time = time(funding_time.hour - 1, 59, 60 - delta)
-#print(entry_time)
-
-print((datetime.strptime(cfg['funding_times'][0], "%H:%M:%S") - timedelta(seconds=2)).time())
+while True:
+    schedule.run_pending()
+    time.sleep(1)
