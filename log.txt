@@ -1,3 +1,5 @@
-2023-01-21 10:59:58.607156 input
-2023-01-21 10:59:59.243318 open trade
-2023-01-21 11:00:00.254209 socket wallet_stream connected
+2023-01-29 16:56:05.574683 input
+2023-01-29 16:56:05.575431 open trade
+2023-01-29 16:56:05.595076 socket wallet_stream connected
+2023-01-29 16:56:24.359689 get funding flag
+2023-01-29 16:56:24.359689 close trade
