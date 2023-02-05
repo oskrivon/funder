@@ -1,5 +1,5 @@
-2023-01-29 16:56:05.574683 input
-2023-01-29 16:56:05.575431 open trade
-2023-01-29 16:56:05.595076 socket wallet_stream connected
-2023-01-29 16:56:24.359689 get funding flag
-2023-01-29 16:56:24.359689 close trade
+2023-01-30 23:15:28.229327 input
+2023-01-30 23:15:28.653324 open trade, price: 2.585, qty: 1
+2023-01-30 23:15:28.659327 socket wallet_stream connected
+2023-01-30 23:15:39.101326 get funding flag
+2023-01-30 23:15:39.387343 close trade, price: 2.345, qty: 1

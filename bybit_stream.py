@@ -4,18 +4,25 @@ import json
 import datetime
 from multiprocessing import Process, Queue
 import websocket
+import pandas as pd
+import pprint
 
 import threading
 
 
 class Bybit_Stream:
-    def __init__(self, key, secret) -> None:
-        self.topic = "wallet"
+    def __init__(self, key, secret, topic, harvest_time, funding_rate) -> None:
+        self.topic = topic
 
         self.key = key
         self.secret = secret
 
         self.process = None
+
+        self.df = None
+
+        self.harvest_time = harvest_time
+        self.funding_rate = funding_rate
 
     def on_message(self, ws, message):
         data = json.loads(message)
@@ -84,39 +91,89 @@ class Bybit_Stream:
                     False, datetime.datetime.now()
                 ])
 
+    def trade_log(self, q):
+        ws = websocket.create_connection('wss://stream.bybit.com/realtime_public')
+        self.on_open(ws)
+
+        global data 
+        data = ''
+
+        ###
+        def update():
+            while True:
+                global data
+                data = json.loads(ws.recv())
+            
+        th = threading.Thread(
+            target=update
+        )
+        th.daemon = True
+        th.start()
+        ###
+
+        times, prices, sizes = [], [], []
+
+        time_begin = datetime.datetime.now()
+        _time = datetime.datetime.now()
+
+        while True:
+            if datetime.datetime.now() - _time > datetime.timedelta(seconds=15):
+                ws.send(json.dumps({"op": "ping"}))
+
+                _time = datetime.datetime.now()
+                #print('>>>>', data)
+
+            if 'data' in data:
+                times.append(data['data'][0]['trade_time_ms'])
+                prices.append(data['data'][0]['price'])
+                sizes.append(data['data'][0]['size'])
+
+                print(
+                    data['data'][0]['price'], 
+                    data['data'][0]['size'],
+                    data['data'][0]['trade_time_ms'],
+                )
+
+                data = ''
+            else:
+                pass
+
+            if datetime.datetime.now() - time_begin > datetime.timedelta(seconds=self.harvest_time):
+                df_name = 'trade_logs/' + self.topic + ' ' + str(self.funding_rate) + '.csv'
+                df = pd.DataFrame(
+                    list(zip(times, prices, sizes)), 
+                    columns = ['timestamp', 'price', 'size']
+                )
+                df.to_csv(df_name, index=False)
+                
+                print('>>>>', df_name + ' df saved')
+                break
+
+            time.sleep(0.2)
+
     def run(self, q):
+        target = self.trade_log
+
+        if self.topic == 'wallet':
+            target = self.alert
+        else:
+            target = self.trade_log
+
         self.process = Process(
-            target=self.alert,
+            target=target,
             args=(q,)
         )
-
         self.process.daemon = True
         self.process.start()
-
-        #status = [False,]
-        #while not status[0]:
-        #    status = q.get()
 
 if __name__ == "__main__":
     key = 'Q7hUt22dcmeh63vVNS'
     secret = 'mzoKDEPcOc8etT3MUx1xGgdpk4cKnUk4Y6Jc'
-    stream = Bybit_Stream(key, secret)
+    stream = Bybit_Stream(key, secret, 'trade.RSS3USDT')
 
     q = Queue()
     status = [False,]
     stream.run(q)
 
-    def process_status():
-        while True:
-            print(stream.process.is_alive())
-            time.sleep(1)
-
-    th = threading.Thread(
-        target=process_status
-    )
-    th.daemon = True
-    th.start()
-
     while True: #status[0]:
-        status = q.get()
-        print(status[0])
+        time.sleep(1)

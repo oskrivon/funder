@@ -3,6 +3,7 @@ import datetime
 from multiprocessing import Process, Queue
 import threading
 import yaml
+import pprint
 
 from pybit import usdt_perpetual
 import schedule
@@ -75,7 +76,8 @@ class Funder:
         q = Queue()
         stream = bybit_stream.Bybit_Stream(
             self.cfg['api'],
-            self.cfg['secret']
+            self.cfg['secret'],
+            'wallet'
         )
         stream.run(q)
 
@@ -92,12 +94,26 @@ class Funder:
         wallet_check_th.start()
         # wallet change check end
 
+    
+    def prices_log(self):
+        q = Queue()
+        stream = bybit_stream.Bybit_Stream(
+            self.cfg['api'],
+            self.cfg['secret'],
+            'trade.' + self.qoutation
+        )
+        stream.run(q)
+
 
     def funder(self):
+        self.prices_log()
+
         self.log_update('w', 'input')
-        #print(self.bybit_connector.create_trade(self.qoutation, 'Buy', self.qty, False, False))
+        open_trade = self.bybit_connector.create_trade(self.qoutation, 'Buy', self.qty, False, False)
+        open_price = open_trade['result']['price']
+        qty = open_trade['result']['qty']
         print('open trade')
-        self.log_update('a', 'open trade')
+        self.log_update('a', 'open trade, price: ' + str(open_price) + ', qty: ' + str(qty))
 
         #self.bybit_socket.wallet_stream(  # wallet_stream trade_stream
         #    self.wallet_changes_check#, 'BTCUSDT'
@@ -113,9 +129,12 @@ class Funder:
             if self.wallet_status[0]:
                 print(self.wallet_status[0])
                 self.log_update('a', 'get funding flag')
-                #print(self.bybit_connector.create_trade(self.qoutation, 'Sell', self.qty, False, False))
+
+                close_trade = self.bybit_connector.create_trade(self.qoutation, 'Sell', self.qty, False, False)
+                close_price = close_trade['result']['price']
+                qty = close_trade['result']['qty']
                 print('close trade')
-                self.log_update('a', 'close trade')
+                self.log_update('a', 'close trade, price: ' + str(close_price) + ', qty: ' + str(qty))
                 self.funding_flag = False
 
                 #print(self.bybit_socket.active_connections)
@@ -125,4 +144,4 @@ class Funder:
 
 
 if __name__ == '__main__':
-    funder = Funder('BOBAUSDT', 20) # SOLUSDT
+    funder = Funder('DYDXUSDT', 1) # SOLUSDT
