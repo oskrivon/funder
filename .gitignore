@@ -1,3 +1,4 @@
 config.yaml
 xxx.py
-log.txt
+/log.txt
+trade_logs

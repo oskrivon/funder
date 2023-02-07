@@ -111,7 +111,7 @@ class Bybit_Stream:
         th.start()
         ###
 
-        times, prices, sizes = [], [], []
+        times, prices, sizes, sides = [], [], [], []
 
         time_begin = datetime.datetime.now()
         _time = datetime.datetime.now()
@@ -127,6 +127,7 @@ class Bybit_Stream:
                 times.append(data['data'][0]['trade_time_ms'])
                 prices.append(data['data'][0]['price'])
                 sizes.append(data['data'][0]['size'])
+                sides.append(data['data'][0]['side'])
 
                 print(
                     data['data'][0]['price'], 
@@ -141,8 +142,8 @@ class Bybit_Stream:
             if datetime.datetime.now() - time_begin > datetime.timedelta(seconds=self.harvest_time):
                 df_name = 'trade_logs/' + self.topic + ' ' + str(self.funding_rate) + '.csv'
                 df = pd.DataFrame(
-                    list(zip(times, prices, sizes)), 
-                    columns = ['timestamp', 'price', 'size']
+                    list(zip(times, prices, sizes, sides)), 
+                    columns = ['timestamp', 'price', 'size', 'side']
                 )
                 df.to_csv(df_name, index=False)
                 
@@ -169,7 +170,7 @@ class Bybit_Stream:
 if __name__ == "__main__":
     key = 'Q7hUt22dcmeh63vVNS'
     secret = 'mzoKDEPcOc8etT3MUx1xGgdpk4cKnUk4Y6Jc'
-    stream = Bybit_Stream(key, secret, 'trade.RSS3USDT')
+    stream = Bybit_Stream(key, secret, 'trade.BTCUSDT', 20, 0.2)
 
     q = Queue()
     status = [False,]
