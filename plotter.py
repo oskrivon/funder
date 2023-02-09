@@ -2,35 +2,91 @@ from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
 
-df = pd.read_csv('trade_logs/trade.FXSUSDT 428.csv', index_col=False)
-df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', origin='unix')
-#df = df.reset_index(drop=True, inplace=True)
-print(df)
+class Plotter:
+    def __init__(self, folder_path):
+        self.folder_path = folder_path
 
-df.plot(x = 'timestamp', y = 'price')
-plt.savefig('trade_logs/saved_figure.png')
+        self.markers = {
+            'sell': 'v',
+            'buy': '^'
+        }
 
-colors = np.random.rand(40)
-x = np.array(df['timestamp'])
-y = np.array(df['price'])
-z = np.array(df['size'])
+        self.colors = {
+            'sell': 'red',
+            'buy': 'green'
+        }
 
-m = np.array(df['side'])
+    def open_df(self):
+        df = pd.read_csv('trade_logs/trade.FXSUSDT 428.csv', index_col=False)
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', origin='unix')
+        #df = df.reset_index(drop=True, inplace=True)
+        print(df)
 
-print(m)
+    def several_graphs(self, df_spot, df_future, report_name, title):
+        #print(df_spot)
+        #print(df_future)
 
-markers = {
-    'Sell': 'v',
-    'Buy': '^'
-}
+        x = np.array(df_spot['date'])
+        x2 = np.array(df_future['date'])
+        y = np.array(df_spot['price'])
+        y2 = np.array(df_future['price'])
 
-colors = {
-    'Sell': 'red',
-    'Buy': 'green'
-}
+        plt.figure(
+            figsize=(16, 10), 
+            #grid=True, 
+            #title=title
+        )
+        plt.grid(True)
+        plt.title(title)
 
-for xp, yp, m in zip(x, y, m):
-    plt.scatter(xp, yp, marker=markers[m], c=colors[m])
+        plt.plot(x, y, x2, y2)
+        plt.savefig(self.folder_path + report_name + ' TR.png')
 
-#plt.scatter(x = x, y = y, marker=markers[m], c='red')
-plt.show()
+        plt.close('all')
+        plt.clf()
+        plt.cla()
+
+
+    def trades_graph(self, df_spot, df_future, file_name, title, report_name):
+        x = np.array(df_spot['date'])
+        y = np.array(df_spot['price'])
+        z = np.array(df_spot['volume'])
+
+        df_spot.plot(
+            x = 'date', y = 'price', figsize=(16, 10), 
+            grid=True, 
+            title=title
+        )
+
+        if 'side' in df_spot:
+            m = np.array(df_spot['side'])
+
+            for xp, yp, m in zip(x, y, m):
+                plt.scatter(xp, yp, marker=self.markers[m], c=self.colors[m])
+        else:
+            for xp, yp in zip(x, y):
+                plt.scatter(xp, yp)
+
+        
+        x = np.array(df_future['date'])
+        y = np.array(df_future['price'])
+        z = np.array(df_future['size'])
+
+        df_future.plot(
+            x = 'date', y = 'price', figsize=(16, 10), 
+            grid=True, 
+            title=title
+        )
+
+        if 'side' in df_future:
+            m = np.array(df_future['side'])
+
+            for xp, yp, m in zip(x, y, m):
+                plt.scatter(xp, yp, marker=self.markers[m], c=self.colors[m])
+        else:
+            for xp, yp in zip(x, y):
+                plt.scatter(xp, yp)
+        
+        #plt.show()
+
+        plt.savefig(self.folder_path + report_name + ' TR.png')

@@ -26,7 +26,7 @@ if __name__ == '__main__':
     harvest_time = 600
 
     def run_harvest():
-        funds = analyzer.get_fundings()[-20:]
+        funds = analyzer.get_current_fundings()[-20:]
 
         for i in funds:
             print(i[0], i[1])
