@@ -104,7 +104,7 @@ class FundingAnalyzer:
             datasets.append(datasets_list)
         return datasets
 
-    def get_top_fundings_for_qoutation(self, quotation):
+    def get_top_fundings_for_qoutation(self, quotation, sampling_depth):
         fundings = self.connector.get_funding_rate(quotation)['result']['list']
         fundings_df = pd.DataFrame(fundings)
         fundings_df = fundings_df.astype(
@@ -119,7 +119,7 @@ class FundingAnalyzer:
             by='fundingRate',
             ascending=False,
             key=lambda x: abs(x)
-        )[:5]
+        )[:sampling_depth]
 
         fundings_df.reset_index(drop=True, inplace=True)
 
@@ -154,6 +154,68 @@ class FundingAnalyzer:
         
         return df.loc[(df['date'] > date_begin) & (df['date'] < date_end)]
 
+    def profit_calculation(self, df_future, funding_date, funding_rate):
+        # cut minute interval after funding
+        minute_after = funding_date + datetime.timedelta(minutes=1)
+        df_after_fund = df_future.loc[
+            (df_future['date'] > funding_date) & 
+            (df_future['date'] < minute_after)
+        ]
+        df_after_fund.reset_index(drop=True, inplace=True)
+        after_volume = round(df_after_fund['size'].sum(), 2)
+
+        # cut minute interval before funding
+        minute_before = funding_date - datetime.timedelta(minutes=1)
+        df_prev_fund = df_future.loc[
+            (df_future['date'] > minute_before) & 
+            (df_future['date'] < funding_date)
+        ]
+        df_prev_fund = df_future.loc[df_future['date'] < row[6]]
+        df_prev_fund.reset_index(drop= True , inplace= True )
+
+        buy_price = df_prev_fund.iloc[-1]['price']
+        before_volume = round(df_prev_fund['size'].sum(), 2)
+
+        ### go
+        rounder = 2
+
+        sell_price_nearest = df_after_fund.iloc[0]['price']
+        date_price_nearest = df_after_fund.iloc[0]['date'].second
+        sell_price_mean = df_after_fund['price'].mean()
+
+        if funding_rate < 0:
+            sell_price_best = df_after_fund['price'].min()
+            df_best_price_dates = df_after_fund.loc[df_after_fund['price'] == sell_price_best]
+            list_best_seconds = (df_best_price_dates.loc[:, 'date'].dt.second).to_list()
+
+            sell_price_worst = df_after_fund['price'].max()
+            df_worst_price_dates = df_after_fund.loc[df_after_fund['price'] == sell_price_worst]
+            list_worst_seconds = (df_worst_price_dates.loc[:, 'date'].dt.second).to_list()
+
+            profit_nearest = round((buy_price - sell_price_nearest) / buy_price * 100, rounder)
+            profit_mean = round((buy_price - sell_price_mean) / buy_price * 100, rounder)
+            profit_best = round((buy_price - sell_price_best) / buy_price * 100, rounder)
+            profit_worst = round((buy_price - sell_price_worst) / buy_price * 100, rounder)
+        else:
+            sell_price_best = df_after_fund['price'].max()
+            df_best_price_dates = df_after_fund.loc[df_after_fund['price'] == sell_price_best]
+            list_best_seconds = (df_best_price_dates.loc[:, 'date'].dt.second).to_list()
+
+            sell_price_worst = df_after_fund['price'].min()
+            df_worst_price_dates = df_after_fund.loc[df_after_fund['price'] == sell_price_worst]
+            list_worst_seconds = (df_worst_price_dates.loc[:, 'date'].dt.second).to_list()
+
+            profit_nearest = round((sell_price_nearest - buy_price) / buy_price * 100, rounder)
+            profit_mean = round((sell_price_mean - buy_price) / buy_price * 100, rounder)
+            profit_best = round((sell_price_best - buy_price) / buy_price * 100, rounder)
+            profit_worst = round((sell_price_worst - buy_price) / buy_price * 100, rounder)
+        
+        return (
+            profit_nearest, profit_mean, profit_best, profit_worst,
+            date_price_nearest, list_best_seconds, list_worst_seconds,
+            after_volume, before_volume
+        )
+
 if __name__ == '__main__':
     with open('config.yaml') as f:
         cfg = yaml.safe_load(f)
@@ -170,13 +232,34 @@ if __name__ == '__main__':
     folder_path = 'history/reports/'
     plotter = plt.Plotter(folder_path)
 
-    quotes = funds_analyzer.get_quotes()
-    print(quotes)
+    funds_analzing_need_flag = True
+    sampling_depth = 5
+
+    if funds_analzing_need_flag:
+        quotes = funds_analyzer.get_quotes()#[:10]
+    else:
+        quotes = ['BNBUSDT']
+
+    print(len(quotes))
+
+    report_data = {
+        'quotations': [],
+        'fund_rates': [],
+        'p_nearest': [],
+        'p_mean': [],
+        'p_best': [],
+        'p_worst': [],
+        'count_future_trades': [],
+        'after_volume': [],
+        'before_volume': []
+    }
+
+    nearest_times_list, best_times_list, worst_times_list = [], [], []
 
     for quotation in quotes:
         if conn.check_spot_exist(quotation):
             try:
-                funds = funds_analyzer.get_top_fundings_for_qoutation(quotation)
+                funds = funds_analyzer.get_top_fundings_for_qoutation(quotation, sampling_depth)
                 datasets_spot = \
                     funds_analyzer.load_full_dataset(quotation, funds, 'spot')
                 datasets_future = \
@@ -194,19 +277,61 @@ if __name__ == '__main__':
             print(funds)
 
             for row in funds.itertuples():
+                # row scructure: Index=0, symbol='1INCHUSDT', fundingRate=0.00052964, fundingRateTimestamp=1673683200000, datasets_spot=['1INCHUSDT_2023-01-14.csv.gz'], datasets_future=['1INCHUSDT2023-01-14.csv.gz'], date=Timestamp('2023-01-14 08:00:00')
                 try:
                     df_spot = funds_analyzer.create_near_funding_dataframes(row[3], row[4])
-                    #print(row[3], row[4])
-                    #print(df_spot)
                     df_future = funds_analyzer.create_near_funding_dataframes(row[3], row[5])
-                    #print(row[3], row[5])
-                    #print(df_spot)
 
-                    title = row[1] + ' ' + str(row[2])
-                    report_name = row[1] + ' ' + str(row[2])
+                    len_spot_df = len(df_spot)
+                    len_fut_df = len(df_future)
+                    #print('spot df len: ', len(df_spot))
+                    #print('future df len: ', len(df_future))
 
-                    #plotter.trades_graph(df_spot, df_future, '', title, report_name)
+                    (profit_nearest, profit_mean, profit_best, profit_worst,
+                    date_price_nearest, list_best_seconds, list_worst_seconds,
+                    after_volume, before_volume) = \
+                        funds_analyzer.profit_calculation(df_future, row[6], row[2])
+
+                    funding_rate = round(row[2] * 100, 2)
+                    profit_nearest = round(profit_nearest - abs(funding_rate) - 0.12, 2)
+                    profit_mean = round(profit_mean - abs(funding_rate) - 0.12, 2)
+                    profit_best = round(profit_best - abs(funding_rate) - 0.12, 2)
+                    profit_worst = round(profit_worst - abs(funding_rate) - 0.12, 2)
+
+                    title = (
+                        row[1] + ', funding rate: ' + str(round(row[2] * 100, 2)) + '\n' +
+                        'profit nearest: ' + str(profit_nearest) + '\n' +
+                        'profit mean: ' + str(profit_mean) + '\n' +
+                        'profit best: ' + str(profit_best) + '\n' +
+                        'profit worst: ' + str(profit_worst)
+                    )
+                    report_name = row[1] + ' ' + str(round(row[2] * 100, 2))
+
+                    #print(row[2], title)
+
+                    report_data['quotations'].append(row[1])
+                    report_data['fund_rates'].append(row[2])
+                    report_data['p_nearest'].append(profit_nearest)
+                    report_data['p_mean'].append(profit_mean)
+                    report_data['p_best'].append(profit_best)
+                    report_data['p_worst'].append(profit_worst)
+                    report_data['count_future_trades'].append(len_fut_df)
+                    report_data['after_volume'].append(after_volume)
+                    report_data['before_volume'].append(before_volume)
+
+                    nearest_times_list.append(date_price_nearest)
+                    best_times_list.extend(list_best_seconds)
+                    worst_times_list.extend(list_worst_seconds)
+
                     plotter.several_graphs(df_spot, df_future, report_name, title)
+
                 except Exception as e:
                     print(e)
-            #print(len(funds_analyzer.create_near_funding_dataframes(funds)))
+            
+    print(report_data)
+    df = pd.DataFrame.from_dict(report_data).reset_index()
+    df.to_csv ('report.csv', index=False)
+
+    pd.DataFrame(nearest_times_list).to_csv('nearest_times.csv', index=False)
+    pd.DataFrame(best_times_list).to_csv('best_times.csv', index=False)
+    pd.DataFrame(worst_times_list).to_csv('worst_times.csv', index=False)

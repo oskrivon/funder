@@ -26,6 +26,8 @@ class Plotter:
         #print(df_spot)
         #print(df_future)
 
+        markers_flag = False
+
         x = np.array(df_spot['date'])
         x2 = np.array(df_future['date'])
         y = np.array(df_spot['price'])
@@ -37,9 +39,21 @@ class Plotter:
             #title=title
         )
         plt.grid(True)
-        plt.title(title)
+        plt.title(title, loc = 'left')
 
-        plt.plot(x, y, x2, y2)
+        plt.plot(x, y, label='spot')
+        plt.plot(x2, y2, label='future')
+        plt.legend()
+
+        if markers_flag:
+            m = np.array(df_spot['side'].str.lower())
+            for xp, yp, m in zip(x, y, m):
+                plt.scatter(xp, yp, s=10, marker=self.markers[m], c=self.colors[m])
+            
+            m = np.array(df_future['side'].str.lower())
+            for xp, yp, m in zip(x2, y2, m):
+                plt.scatter(xp, yp, s=10, marker=self.markers[m], c=self.colors[m])
+
         plt.savefig(self.folder_path + report_name + ' TR.png')
 
         plt.close('all')
