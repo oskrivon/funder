@@ -20,7 +20,7 @@ PRIVATE_WSS = 'wss://stream.bybit.com/v5/private'
 
 
 class Bybit_Stream:
-    def __init__(self, key, secret, market_type, topics, quotes, harvest_time):
+    def __init__(self, key, secret, market_type, topics, quotes, harvest_time, once = False):
         self.topics = topics
         self.quotes = quotes
 
@@ -31,6 +31,7 @@ class Bybit_Stream:
         self.df = None
 
         self.harvest_time = harvest_time
+        self.once = once
 
         self.endpoint = {
             'spot': 'wss://stream.bybit.com/v5/public/spot',
@@ -94,6 +95,9 @@ class Bybit_Stream:
                 data = json.loads(self.ws.recv())
                 if 'topic' in data:
                     q.put(data)
+
+                # terminating a thread if only one value from the stream was needed
+                if self.once: break
             
         # thread for updating data from socket 
         th = threading.Thread(
@@ -108,10 +112,12 @@ class Bybit_Stream:
         times, prices, sizes, sides = [], [], [], []
 
         while True:
+            # ping -> remove to system funcs
             if dt.now() - time_ping > delta(seconds=15):
                 self.ws.send(json.dumps({"op": "ping"}))
                 time_ping = dt.now()
 
+            # timer for harvesting
             if self.harvest_time > 0:
                 if dt.now() - time_begin > delta(seconds=self.harvest_time):
                     df_name = 'trade_logs/' + self.topics + ' ' + str(self.funding_rate) + '.csv'

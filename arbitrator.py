@@ -68,8 +68,8 @@ if __name__ == '__main__':
                 data = q.get()
 
                 if 'orderbook' in topic:
-                    if data['type'] == 'snapshot':
-                        print('>>>> ', topic, ' ', data)
+                    #if data['type'] == 'snapshot':
+                    print('>>>> ', topic, ' ', data['data']['b'], '\n___\n', data['data']['a'])
                 else:
                     price = float(data['data'][0]['p'])
                     symbol = data['topic'].replace(topics + '.', '')
@@ -105,9 +105,13 @@ if __name__ == '__main__':
     data_updater(q_linear, market_type, topics)
 
     def get_orderbook(quotes):
-        topics = 'orderbook.500'
+        topics = 'orderbook.50'
         market_type = 'linear'
-        stream_linear_ob = bybit_stream.Bybit_Stream(cfg['api'], cfg['secret'], market_type, topics, quotes, 0)
+        stream_linear_ob = bybit_stream.Bybit_Stream(
+            cfg['api'], cfg['secret'], 
+            market_type, topics, quotes, 0,
+            once=True
+        )
         q_linear_ob = Queue()
         stream_linear_ob.run(q_linear_ob)
         data_updater(q_linear_ob, market_type, topics)
