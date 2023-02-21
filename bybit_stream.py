@@ -1,7 +1,8 @@
 import hmac
 import time
 import json
-import datetime
+from datetime import datetime as dt
+from datetime import timedelta as delta
 from multiprocessing import Process, Queue
 import websocket
 import pandas as pd
@@ -10,155 +11,129 @@ import pprint
 import threading
 
 
+SPOT_WSS = 'wss://stream.bybit.com/v5/public/spot'
+LINEAR_WSS = 'wss://stream.bybit.com/v5/public/linear'
+INVERSE_WSS = 'wss://stream.bybit.com/v5/public/inverse'
+USDC_WSS = 'wss://stream.bybit.com/v5/public/option'
+
+PRIVATE_WSS = 'wss://stream.bybit.com/v5/private'
+
+
 class Bybit_Stream:
-    def __init__(self, key, secret, topic, harvest_time, funding_rate) -> None:
-        self.topic = topic
+    def __init__(self, key, secret, market_type, topics, quotes, harvest_time):
+        self.topics = topics
+        self.quotes = quotes
 
         self.key = key
         self.secret = secret
-
-        self.process = None
+        self.market_type = market_type
 
         self.df = None
 
         self.harvest_time = harvest_time
-        self.funding_rate = funding_rate
 
-    def on_message(self, ws, message):
-        data = json.loads(message)
-        print(data)
+        self.endpoint = {
+            'spot': 'wss://stream.bybit.com/v5/public/spot',
+            'linear': 'wss://stream.bybit.com/v5/public/linear',
+            'inverse': 'wss://stream.bybit.com/v5/public/inverse',
+            'option': 'wss://stream.bybit.com/v5/public/option',
+            'private': 'wss://stream.bybit.com/v5/private'
+        }
 
-    def on_error(self, ws, error):
-        print('we got error')
-        print(error)
+    
+    def _operation(self, op, args):
+        self.ws.send(
+            json.dumps({
+                'op': op,
+                'args': args
+            })
+        )
 
-    def on_close(self, ws):
-        print("### about to close please don't close ###")
-
-    def on_pong(self, ws, *data):
-        print('pong received')
-
-    def on_ping(self, ws, *data):
-        print('ping received')
-
-    def send_auth(self, ws):
+    def _auth(self):
         expires = int((time.time() + 10) * 1000)
+
         _val = f'GET/realtime{expires}'
         signature = str(hmac.new(
             bytes(self.secret, 'utf-8'),
             bytes(_val, 'utf-8'), digestmod='sha256'
         ).hexdigest())
-        ws.send(json.dumps({"op": "auth", "args": [self.key, expires, signature]}))
 
-    def on_open(self, ws):
-        print('opened')
-        self.send_auth(ws)
-        print('send subscription ' + self.topic)
-        ws.send(json.dumps({"op": "subscribe", "args": [self.topic]}))
+        self._operation('auth', [self.key, expires, signature])
 
-    # for websocket connection
-    def connWS(self):
-        ws = websocket.WebSocketApp(
-            'wss://stream.bybit.com/realtime_private',
-            on_message=self.on_message,
-            on_error=self.on_error,
-            on_close=self.on_close,
-            on_ping=self.on_ping,
-            on_pong=self.on_pong,
-            on_open=self.on_open
-        )
-        return ws
+    def _subscribe(self, topics, quotes):
+        full_topics = []
+        for quotation in quotes:
+            full_topics.append(topics + '.' + quotation)
+        print('___________\n', full_topics)
+        self._operation('subscribe', full_topics)
 
-    def alert(self, q):
-        ws = websocket.create_connection('wss://stream.bybit.com/realtime_private')
-        self.send_auth(ws)
-        self.on_open(ws)
+    # sketch
+    def _unsubscribe(self, topics):
+        self._operation('unsubscribe', topics)
 
-        wallet_change = False
+    # sketch
+    def add_topics(self, topics):
+        self._subscribe(topics)
 
-        while not wallet_change:
-            data = json.loads(ws.recv())
-            print(data)
-
-            if 'topic' in data:
-                if data['topic'] == 'wallet':
-                    q.put([
-                        True, datetime.datetime.now()
-                    ])
-                    wallet_change = True
-            else:
-                q.put([
-                    False, datetime.datetime.now()
-                ])
+    # sketch
+    def remove_topics(self, topics):
+        self._unsubscribe(topics)
 
     def trade_log(self, q):
-        ws = websocket.create_connection('wss://stream.bybit.com/realtime_public')
-        self.on_open(ws)
+        self.ws = websocket.create_connection(self.endpoint[self.market_type])
+        if self.market_type == 'private':
+            self._auth()
+        self._subscribe(self.topics, self.quotes)
 
         global data 
         data = ''
 
-        ###
         def update():
             while True:
                 global data
-                data = json.loads(ws.recv())
+                data = json.loads(self.ws.recv())
+                if 'topic' in data:
+                    q.put(data)
             
+        # thread for updating data from socket 
         th = threading.Thread(
             target=update
         )
         th.daemon = True
         th.start()
-        ###
+
+        time_begin = dt.now()
+        time_ping = dt.now()
 
         times, prices, sizes, sides = [], [], [], []
 
-        time_begin = datetime.datetime.now()
-        _time = datetime.datetime.now()
-
         while True:
-            if datetime.datetime.now() - _time > datetime.timedelta(seconds=15):
-                ws.send(json.dumps({"op": "ping"}))
+            if dt.now() - time_ping > delta(seconds=15):
+                self.ws.send(json.dumps({"op": "ping"}))
+                time_ping = dt.now()
 
-                _time = datetime.datetime.now()
-                #print('>>>>', data)
-
-            if 'data' in data:
-                times.append(data['data'][0]['trade_time_ms'])
-                prices.append(data['data'][0]['price'])
-                sizes.append(data['data'][0]['size'])
-                sides.append(data['data'][0]['side'])
-
-                print(
-                    data['data'][0]['price'], 
-                    data['data'][0]['size'],
-                    data['data'][0]['trade_time_ms'],
-                )
-
-                data = ''
-            else:
-                pass
-
-            if datetime.datetime.now() - time_begin > datetime.timedelta(seconds=self.harvest_time):
-                df_name = 'trade_logs/' + self.topic + ' ' + str(self.funding_rate) + '.csv'
-                df = pd.DataFrame(
-                    list(zip(times, prices, sizes, sides)), 
-                    columns = ['timestamp', 'price', 'size', 'side']
-                )
-                df.to_csv(df_name, index=False)
-                
-                print('>>>>', df_name + ' df saved')
-                break
+            if self.harvest_time > 0:
+                if dt.now() - time_begin > delta(seconds=self.harvest_time):
+                    df_name = 'trade_logs/' + self.topics + ' ' + str(self.funding_rate) + '.csv'
+                    df = pd.DataFrame(
+                        list(zip(times, prices, sizes, sides)), 
+                        columns = ['timestamp', 'price', 'size', 'side']
+                    )
+                    df.to_csv(df_name, index=False)
+                    
+                    print('>>>>', df_name + ' df saved')
+                    break
 
             time.sleep(0.2)
 
     def run(self, q):
         target = self.trade_log
 
+        """
         if self.topic == 'wallet':
             target = self.alert
         else:
-            target = self.trade_log
+        """
 
         self.process = Process(
             target=target,
