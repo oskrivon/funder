@@ -1,6 +1,7 @@
 from collections import namedtuple
 import requests
 import json
+import pandas as pd
 
 Point = namedtuple('Point', ['x', 'y'])
 p = Point(20, 85)
@@ -44,3 +45,8 @@ ddd['e'] = 120
 ddd['q'] = 200
 
 print(ddd)
+
+df = pd.read_csv('reports/max_diffs.csv')
+print(df)
+df = df.sort_values(by='difference', ascending=False)
+print(df[:30])

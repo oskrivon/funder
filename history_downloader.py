@@ -5,6 +5,8 @@ from urllib.error import HTTPError
 import wget
 import os
 
+import arbitrator
+
 
 # rework of the get_market_history.py scrypt form level analyzer
 class HistoryDownloader:
@@ -97,15 +99,13 @@ class HistoryDownloader:
 
         return dates
     
-    # generate the linf for download
+    # generate the linл for download
     def link_generate(self, market_type, date, quotation):
         # link exaples: 
         # https://public.bybit.com/trading/10000NFTUSDT/10000NFTUSDT2022-01-30.csv.gz trading endpoint
         # https://public.bybit.com/spot/ALGOUSDT/ALGOUSDT_2023-01-01.csv.gz spot endpoint
 
         endpoint = 'https://public.bybit.com'
-        #market_type = 'spot' # or 'trading'
-        #quotation = 'ALGOUSDT'
         file_format = 'csv.gz'
 
         if market_type == 'spot':
@@ -119,7 +119,11 @@ class HistoryDownloader:
         file_path = download_path + '/' + download_link.split('/')[-1]
         os.makedirs(download_path, exist_ok=True) # create folder if not exist
         if not os.path.exists(file_path): # file existing check
-            wget.download(download_link, download_path)
+            print(download_link)
+            try:
+                wget.download(download_link, download_path)
+            except Exception as e:
+                print(e)
 
     # dowload a list of the files
     def downloading(self, quotes, market_type, sampling_depth):
@@ -130,14 +134,18 @@ class HistoryDownloader:
             for date in dates:
                 download_link = self.link_generate(market_type, date, quotation)
                 self.dowload_once(download_link, download_path)
+                
 
 if __name__ == '__main__':
-    quotation = ['FITFIUSDT', 'TRXUSDT']
+    arb = arbitrator.Arbitrator()
+    quotation = arb.get_quotes()
+    print(quotation)
+    #quotation = ['FITFIUSDT', 'TRXUSDT']
     market_types = ['spot', 'trading']
 
     hd = HistoryDownloader()
     for market_type in market_types:
-        hd.downloading(quotation, market_type, 2) # 'spot' or 'trading'
+        hd.downloading(quotation, market_type, 30) # 'spot' or 'trading'
 
     #print(hd.date_generate(1))
 
