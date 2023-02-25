@@ -13,7 +13,12 @@ import bybit_stream
 
 class Arbitrator:
     def __init__(self) -> None:
-        pass
+        self.prices_linear = {}
+        self.prices_spot = {}
+
+        self.orderbook_linear = {}
+        self.orderbook_spot = {}
+
     
     # returns quotes that are available on both the spot and futures markets
     def get_quotes(self):
@@ -26,64 +31,43 @@ class Arbitrator:
         
         res_linear = requests.get(url_linear)
         res_spot = requests.get(url_spot)
+
         return list(
             set(symbols_separatop(res_linear)) & 
             set(symbols_separatop(res_spot))
         )
+    
+    def _parse(self, sample, market_type):
+        if 'publicTrade' in sample['topic']:
+            price = float(sample['data'][0]['p'])
+            symbol = sample['topic'].replace('publicTrade.', '')
+
+            if market_type == 'linear':
+                self.prices_linear[symbol] = price
+            elif market_type == 'spot':
+                self.prices_spot[symbol] = price
+
+        elif 'orderbook' in sample['topic']:
+            print('>>>> ', sample['topic'], ' ', sample['data']['b'], '\n___\n', sample['data']['a'])
+    
+    def _update(self, q, market_type):
+        while True:
+            data = q.get()
+            self._parse(data, market_type)
+    
+    # run a stream with data update from the connector
+    def run_update_thread(self, q, market_type):
+        data_update_th = threading.Thread(
+            target=self._update,
+            args=(q, market_type)
+        )
+        data_update_th.daemon = True
+        data_update_th.start()
+
 
 if __name__ == '__main__':
     with open('config.yaml') as f:
         cfg = yaml.safe_load(f)
-
-    session = usdt_perpetual.HTTP(
-        endpoint=cfg['endpoint'],
-        api_key=cfg['api'],
-        api_secret=cfg['secret']
-    )
-
-    prices_linear = {}
-    prices_spot = {}
-
-    orderbook_linear = {}
-    orderbook_spot = {}
-
-    def data_updater(q, market_type, topic):
-        print(q, market_type, topic)
-        def data_update():
-            if 'orderbook' in topic:
-                if market_type == 'linear':
-                    global orderbook_linear
-                    market = orderbook_linear
-                else:
-                    pass
-            else:
-                if market_type == 'linear':
-                    global prices_linear
-                    market = prices_linear
-                else:
-                    global prices_spot
-                    market = prices_spot
-
-            while True:
-                data = q.get()
-
-                if 'orderbook' in topic:
-                    #if data['type'] == 'snapshot':
-                    print('>>>> ', topic, ' ', data['data']['b'], '\n___\n', data['data']['a'])
-                else:
-                    price = float(data['data'][0]['p'])
-                    symbol = data['topic'].replace(topics + '.', '')
-
-                    market[symbol] = price
-                #print('>>>> ', market_type)
-                #print(market)
-
-        # thread for updating data from socket
-        wallet_check_th = threading.Thread(
-            target=data_update
-        )
-        wallet_check_th.daemon = True
-        wallet_check_th.start()
 
     arbitrator = Arbitrator()
     quotes = arbitrator.get_quotes()
@@ -96,13 +80,18 @@ if __name__ == '__main__':
     stream_linear = bybit_stream.Bybit_Stream(cfg['api'], cfg['secret'], market_type, topics, quotes, 0)
     q_linear = Queue()
     stream_linear.run(q_linear)
-    data_updater(q_linear, market_type, topics)
 
+    arbitrator.run_update_thread(q_linear, market_type)
+
+
+    #quotes = ['ETHUSDT', 'SOLUSDT']
     market_type = 'spot'
     stream_spot = bybit_stream.Bybit_Stream(cfg['api'], cfg['secret'], market_type, topics, quotes, 0)
     q_spot = Queue()
     stream_spot.run(q_spot)
-    data_updater(q_linear, market_type, topics)
+    
+    arbitrator.run_update_thread(q_spot, market_type)
+
 
     def get_orderbook(quotes):
         topics = 'orderbook.50'
@@ -114,14 +103,17 @@ if __name__ == '__main__':
         )
         q_linear_ob = Queue()
         stream_linear_ob.run(q_linear_ob)
-        data_updater(q_linear_ob, market_type, topics)
+        arbitrator.run_update_thread(q_linear_ob, market_type)
 
     flag = False
     while True:
+        print('>>>> linear: ', arbitrator.prices_linear)
+        print('>>>> spot: ', arbitrator.prices_spot)
+
         difference = {}
-        for key in prices_linear:
-            if key in prices_spot:
-                diff = round((prices_linear[key] - prices_spot[key]) / prices_linear[key] * 100, 4)
+        for key in arbitrator.prices_linear:
+            if key in arbitrator.prices_spot:
+                diff = round((arbitrator.prices_linear[key] - arbitrator.prices_spot[key]) / arbitrator.prices_linear[key] * 100, 4)
                 if diff != 0:
                     difference[key] = diff
         
@@ -136,10 +128,10 @@ if __name__ == '__main__':
                 flag = True
 
             pprint.pprint(difference_sorted)
-            print(orderbook_linear)
+            print(arbitrator.orderbook_linear)
 
-        print('count linear: ', len(prices_linear))
-        print('count spot: ', len(prices_spot))
+        print('count linear: ', len(arbitrator.prices_linear))
+        print('count spot: ', len(arbitrator.prices_spot))
         print('count non-zero diff: ', len(difference))
 
         #print('>>>> linear: ', prices_linear, len(prices_linear))
