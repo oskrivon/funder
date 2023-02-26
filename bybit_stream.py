@@ -49,6 +49,10 @@ class Bybit_Stream:
                 'args': args
             })
         )
+    
+        #recv = json.loads(self.ws.recv())
+        #if 'success' in recv.keys():
+        #    print(recv)
 
     def _auth(self):
         expires = int((time.time() + 10) * 1000)
@@ -66,7 +70,12 @@ class Bybit_Stream:
         for quotation in quotes:
             full_topics.append(topics + '.' + quotation)
         print('___________\n', full_topics)
-        self._operation('subscribe', full_topics)
+
+        # here we include topics one by one, 
+        # because the spot market sometimes returns an error 
+        # if the list length is more than 10 elements
+        for topic in full_topics:
+            self._operation('subscribe', [topic])
 
     # sketch
     def _unsubscribe(self, topics):
@@ -81,23 +90,43 @@ class Bybit_Stream:
         self._unsubscribe(topics)
 
     def trade_log(self, q):
+        global flag_work
+        flag_work = True
+
         self.ws = websocket.create_connection(self.endpoint[self.market_type])
         if self.market_type == 'private':
             self._auth()
-        self._subscribe(self.topics, self.quotes)
-
+                        
         global data 
         data = ''
+
+        # to get market depth, you need to get a snapshot. 
+        # the futures and spot markets send a snapshot at different times, 
+        # so immediately after creating the connection, 
+        # we write the response from the server to a variable. 
+        # if the response contains a snapshot, it will be processed further in the thread
+        self._subscribe(self.topics, self.quotes)
+        data_raw = json.loads(self.ws.recv())
+        if 'topic' in data_raw.keys():
+            data = data_raw
+        #print(data)
 
         def update():
             while True:
                 global data
-                data = json.loads(self.ws.recv())
+                if data == '':
+                    data = json.loads(self.ws.recv())
+
                 if 'topic' in data:
                     q.put(data)
+                
+                data = ''
 
                 # terminating a thread if only one value from the stream was needed
-                if self.once: break
+                if self.once:
+                    global flag_work
+                    flag_work = False
+                    break
             
         # thread for updating data from socket 
         th = threading.Thread(
@@ -111,7 +140,7 @@ class Bybit_Stream:
 
         times, prices, sizes, sides = [], [], [], []
 
-        while True:
+        while flag_work:
             # ping -> remove to system funcs
             if dt.now() - time_ping > delta(seconds=15):
                 self.ws.send(json.dumps({"op": "ping"}))
@@ -134,13 +163,6 @@ class Bybit_Stream:
 
     def run(self, q):
         target = self.trade_log
-
-        """
-        if self.topic == 'wallet':
-            target = self.alert
-        else:
-        """
-
         self.process = Process(
             target=target,
             args=(q,)

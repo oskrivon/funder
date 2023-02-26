@@ -13,11 +13,17 @@ import bybit_stream
 
 class Arbitrator:
     def __init__(self) -> None:
+        with open('config.yaml') as f:
+            self.cfg = yaml.safe_load(f)
+
         self.prices_linear = {}
         self.prices_spot = {}
 
         self.orderbook_linear = {}
         self.orderbook_spot = {}
+
+        self.difference = {}
+
 
     
     # returns quotes that are available on both the spot and futures markets
@@ -48,8 +54,10 @@ class Arbitrator:
                 self.prices_spot[symbol] = price
 
         elif 'orderbook' in sample['topic']:
-            print('>>>> ', sample['topic'], ' ', sample['data']['b'], '\n___\n', sample['data']['a'])
+            #print('>>>> ', sample['topic'], ' ', market_type, '\n', sample['data']['b'], '\n___\n', sample['data']['a'])
+            print('>>>>', market_type, ' ', sample)
     
+    # get an update q-data from the stream
     def _update(self, q, market_type):
         while True:
             data = q.get()
@@ -64,76 +72,54 @@ class Arbitrator:
         data_update_th.daemon = True
         data_update_th.start()
 
+    # set and run instance of stream for market type and data type
+    def run_data_stream(self, quotes, topics, market_type, once_flag = False):
+        q = Queue()
+        stream = bybit_stream.Bybit_Stream(
+            '', '', market_type, topics, quotes, 0, once_flag
+        )
+        stream.run(q)
+        self.run_update_thread(q, market_type)
+
+    def difference_calculation(self):
+        for key in self.prices_linear:
+            if key in self.prices_spot:
+                diff = round(
+                    (self.prices_linear[key] - self.prices_spot[key]) / self.prices_linear[key] * 100, 4
+                )
+                if diff != 0:
+                    self.difference[key] = diff
+        return self.difference
+    
+    def arbitration_process(self):
+        # run streams for spot and future markets
+        self.run_data_stream(quotes, 'publicTrade', 'linear')
+        self.run_data_stream(quotes, 'publicTrade', 'spot')
+
+        flag = False
+        while True:
+            time.sleep(1)
+            difference = arbitrator.difference_calculation()
+
+            if len(difference) > 10:
+                difference_sorted = sorted(
+                    difference.items(), key=lambda x: (abs(x[1]), x[1]), reverse=True
+                )[:10] # get top 10
+                quotes_for_orderbooks = [x[0] for x in difference_sorted]
+                #print('___________', quotes_for_orderbooks)
+                if not flag:
+                    flag = True
+                    for quotation in quotes_for_orderbooks:
+                        print(quotation)
+                        self.run_data_stream([quotation], 'orderbook.50', 'spot', once_flag=True)
+                        self.run_data_stream([quotation], 'orderbook.50', 'linear', once_flag=True)
+            
+            #time.sleep(1)
+
 
 if __name__ == '__main__':
-    with open('config.yaml') as f:
-        cfg = yaml.safe_load(f)
-
     arbitrator = Arbitrator()
     quotes = arbitrator.get_quotes()
     print(len(quotes))
 
-    #quotes = ['ETHUSDT']#, 'ETHUSDT', 'SOLUSDT']
-    topics = 'publicTrade'
-    
-    market_type = 'linear'
-    stream_linear = bybit_stream.Bybit_Stream(cfg['api'], cfg['secret'], market_type, topics, quotes, 0)
-    q_linear = Queue()
-    stream_linear.run(q_linear)
-
-    arbitrator.run_update_thread(q_linear, market_type)
-
-
-    #quotes = ['ETHUSDT', 'SOLUSDT']
-    market_type = 'spot'
-    stream_spot = bybit_stream.Bybit_Stream(cfg['api'], cfg['secret'], market_type, topics, quotes, 0)
-    q_spot = Queue()
-    stream_spot.run(q_spot)
-    
-    arbitrator.run_update_thread(q_spot, market_type)
-
-
-    def get_orderbook(quotes):
-        topics = 'orderbook.50'
-        market_type = 'linear'
-        stream_linear_ob = bybit_stream.Bybit_Stream(
-            cfg['api'], cfg['secret'], 
-            market_type, topics, quotes, 0,
-            once=True
-        )
-        q_linear_ob = Queue()
-        stream_linear_ob.run(q_linear_ob)
-        arbitrator.run_update_thread(q_linear_ob, market_type)
-
-    flag = False
-    while True:
-        print('>>>> linear: ', arbitrator.prices_linear)
-        print('>>>> spot: ', arbitrator.prices_spot)
-
-        difference = {}
-        for key in arbitrator.prices_linear:
-            if key in arbitrator.prices_spot:
-                diff = round((arbitrator.prices_linear[key] - arbitrator.prices_spot[key]) / arbitrator.prices_linear[key] * 100, 4)
-                if diff != 0:
-                    difference[key] = diff
-        
-        
-        if len(difference) > 10:
-            difference_sorted = sorted(difference.items(), key=lambda x: (abs(x[1]), x[1]), reverse=True)[:2]
-            if not flag:
-                qqq = []
-                qqq.append(difference_sorted[0][0])
-                print('>>>> ', qqq)
-                get_orderbook(qqq)
-                flag = True
-
-            pprint.pprint(difference_sorted)
-            print(arbitrator.orderbook_linear)
-
-        print('count linear: ', len(arbitrator.prices_linear))
-        print('count spot: ', len(arbitrator.prices_spot))
-        print('count non-zero diff: ', len(difference))
-
-        #print('>>>> linear: ', prices_linear, len(prices_linear))
-        #print('>>>> spot: ', prices_spot, len(prices_spot))
-        time.sleep(1)
+    arbitrator.arbitration_process()
