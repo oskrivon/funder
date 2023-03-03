@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
+import datetime
 
 class Plotter:
     def __init__(self, folder_path):
@@ -15,6 +16,7 @@ class Plotter:
             'sell': 'red',
             'buy': 'green'
         }
+
 
     def open_df(self):
         df = pd.read_csv('trade_logs/trade.FXSUSDT 428.csv', index_col=False)
@@ -60,7 +62,6 @@ class Plotter:
         plt.clf()
         plt.cla()
 
-
     def trades_graph(self, df_spot, df_future, file_name, title, report_name):
         x = np.array(df_spot['date'])
         y = np.array(df_spot['price'])
@@ -104,3 +105,49 @@ class Plotter:
         #plt.show()
 
         plt.savefig(self.folder_path + report_name + ' TR.png')
+    
+    # report for Depth of Market
+    # creates a bar chart with DOM, writes in the legend 
+    # the current and the maximum price difference for the month 
+    # on the futures and spot markets
+    # takes df of the form:
+    # | price | volume | side |
+    # |-------|--------|------|
+    # |  0.875|    57.5|   bid|  (or ask)
+
+    def create_DOM_report(self, df, symbol, market_type, max_historical_diff, diff):
+        df = df.sort_values(by='price')
+        #df = df.set_index('price')
+
+        ax = df.plot(
+            x='price',
+            y = ['volume_spot', 'volume_linear'],
+            kind='barh', 
+            color = {
+                'volume_spot': 
+                    df['side_spot'].replace({
+                        'ask': 'green', 'bid': 'red', np.nan: 'black'
+                    }),
+                'volume_linear': 
+                    df['side_linear'].replace({
+                        'ask': 'lightgreen', 'bid': 'lightcoral', np.nan: 'black'
+                    })
+            }, 
+            figsize=(7, 15), 
+            width=1,
+            fontsize=5,
+            grid=True,
+            legend=False,
+        )
+        ax.text(
+            0.5, 1, 
+            f'quotation: {symbol}\nmax historical difference: {round(max_historical_diff, 4)}\ncurrent difference: {diff}', 
+            fontsize=12, transform=ax.transAxes
+        )
+
+        now = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M')
+        file_name = f'{symbol} {market_type} {now}'
+
+        plt.savefig(f'{self.folder_path}/{file_name}.png', dpi = 600)
+        plt.clf()
+        #plt.show()
