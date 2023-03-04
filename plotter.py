@@ -110,10 +110,6 @@ class Plotter:
     # creates a bar chart with DOM, writes in the legend 
     # the current and the maximum price difference for the month 
     # on the futures and spot markets
-    # takes df of the form:
-    # | price | volume | side |
-    # |-------|--------|------|
-    # |  0.875|    57.5|   bid|  (or ask)
 
     def create_DOM_report(self, df, symbol, market_type, max_historical_diff, diff):
         df = df.sort_values(by='price')
