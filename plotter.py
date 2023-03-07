@@ -113,7 +113,6 @@ class Plotter:
 
     def create_DOM_report(self, df, symbol, market_type, max_historical_diff, diff):
         df = df.sort_values(by='price')
-        #df = df.set_index('price')
 
         ax = df.plot(
             x='price',
@@ -143,7 +142,10 @@ class Plotter:
 
         now = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M')
         file_name = f'{symbol} {market_type} {now}'
+        file_path = f'{self.folder_path}/{file_name}.png'
 
-        plt.savefig(f'{self.folder_path}/{file_name}.png', dpi = 600)
+        plt.savefig(file_path, dpi = 600)
         plt.clf()
         #plt.show()
+
+        return file_path

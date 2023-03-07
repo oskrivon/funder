@@ -14,6 +14,7 @@ from pybit import usdt_perpetual
 import connector
 import bybit_stream
 import plotter
+import tg_bot as bot
 
 class Arbitrator:
     def __init__(self) -> None:
@@ -37,6 +38,9 @@ class Arbitrator:
         )
         print(self.diffs_historycal)
 
+        self.arbitrator_bot = bot.Bot(self.cfg['tg_token'])
+        self.arbitrator_bot.run()
+
     
     # returns quotes that are available on both the spot and futures markets
     def get_quotes(self):
@@ -55,6 +59,7 @@ class Arbitrator:
             set(symbols_separatop(res_spot))
         )
     
+    # later separated into a separate class !!!
     def _parse(self, sample, market_type):
         if 'publicTrade' in sample['topic']:
             price = float(sample['data'][0]['p'])
@@ -116,7 +121,26 @@ class Arbitrator:
         )
         stream.run(q)
         self.run_update_thread(q, market_type)
+    
+    # need separate to other class
+    def _get_orderbook(self, market_type, quote, limit):
+        endpoint = 'https://api.bybit.com/v5/market/orderbook'
+        params = {
+            'category': market_type,
+            'symbol': quote,
+            'limit': limit
+        }
+        r = requests.get(endpoint, params=params)
+        data = json.loads(r.text)
+        print(data)
+    
+    # get both future and spot orderbooks and assembly it
+    def get_pivot_orderbook(srlf, quote):
+        pass
 
+    # calculates the difference between the prices 
+    # of the spot and futures markets as a percentage
+    # diff = (fut - spot) / fut * 100
     def difference_calculation(self):
         for key in self.prices_linear:
             if key in self.prices_spot:
@@ -127,22 +151,53 @@ class Arbitrator:
                     self.difference[key] = diff
         return self.difference
     
+    # the main process of the program. 
+    # launches streams for the spot and futures markets. 
+    # data from streams goes to dictionaries declared during initialization. 
+    # the process processes dictionaries by condition and generates reports
     def arbitration_process(self):
         # run streams for spot and future markets
         self.run_data_stream(quotes, 'publicTrade', 'linear')
         self.run_data_stream(quotes, 'publicTrade', 'spot')
 
-        flag = False # temporary condition for DOM request !!!
+        flag = True # temporary condition for DOM request !!!
         flag_img_creation = False # temporary condition for report creation !!!
-        while True:
-            time.sleep(1)
-            difference = arbitrator.difference_calculation()
 
-            if len(difference) > 5:
+        target_quotes = {}
+
+        while True:
+            threshold = 1 # threshold for quotes filtration
+
+            time.sleep(1)
+            difference = arbitrator.difference_calculation() # dict x{quote: diff}
+
+            if len(difference) > 5: # condition
+                print(difference)
+                
+                greater_th_quotes = {key: val for key, val in difference.items() if val >= threshold or val <= -1 * threshold}
+
+                # added quotes to the target quotes dict
+                for key in greater_th_quotes:
+                    if key not in target_quotes:
+                        target_quotes[key] = greater_th_quotes[key]
+
+                        # action
+                        print('new quotes!', key)
+                        self._get_orderbook('linear', key, 50)
+                        #self.arbitrator_bot.broadcast(str(key) + ':  ' + str(greater_th_quotes[key]))
+                
+                target_quotes = greater_th_quotes
+
+                print(target_quotes)
+
                 difference_sorted = sorted(
                     difference.items(), key=lambda x: (abs(x[1]), x[1]), reverse=True
-                )[:5] # get top 10
+                ) # get top 5
+
+                print(difference_sorted[:5])
+                print(target_quotes)
                 quotes_for_orderbooks = [x[0] for x in difference_sorted]
+                
                 if not flag: # temporary condition for DOM request !!!
                     flag = True
                     for quotation in quotes_for_orderbooks:
