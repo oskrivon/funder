@@ -144,7 +144,7 @@ class Plotter:
         file_name = f'{symbol} {market_type} {now}'
         file_path = f'{self.folder_path}/{file_name}.png'
 
-        plt.savefig(file_path, dpi = 600)
+        plt.savefig(file_path, dpi = 400)
         plt.clf()
         #plt.show()
 

@@ -61,20 +61,49 @@ class Arbitrator:
     
     # later separated into a separate class !!!
     def _parse(self, sample, market_type):
-        if 'publicTrade' in sample['topic']:
-            price = float(sample['data'][0]['p'])
-            symbol = sample['topic'].replace('publicTrade.', '')
+        if 'topic' in  sample: # if topic in sample -> sample from stream
+            if 'publicTrade' in sample['topic']:
+                price = float(sample['data'][0]['p'])
+                symbol = sample['topic'].replace('publicTrade.', '')
 
-            if market_type == 'linear':
-                self.prices_linear[symbol] = price
-            elif market_type == 'spot':
-                self.prices_spot[symbol] = price
+                if market_type == 'linear':
+                    self.prices_linear[symbol] = price
+                elif market_type == 'spot':
+                    self.prices_spot[symbol] = price
 
-        elif 'orderbook' in sample['topic']:
-            symbol = sample['topic'].replace('orderbook.50.', '')
+            elif 'orderbook' in sample['topic']:
+                symbol = sample['topic'].replace('orderbook.50.', '')
 
-            asks = sample['data']['a']
-            bids = sample['data']['b']
+                asks = sample['data']['a']
+                bids = sample['data']['b']
+
+                asks_prices = [float(x[0]) for x in asks]
+                asks_volumes = [float(x[1]) for x in asks]
+                ask_side = ['ask'] * len(asks_prices)
+
+                bids_prices = [float(x[0]) for x in bids]
+                bids_volumes = [float(x[1]) for x in bids]
+                bids_side = ['bid'] * len(bids_prices)
+
+                prices = asks_prices + bids_prices
+                volumes = asks_volumes + bids_volumes
+                sides = ask_side + bids_side
+                
+                df = pd.DataFrame([prices, volumes, sides]).transpose()
+                df.columns=['price', 'volume', 'side']
+
+                if market_type == 'linear':
+                    df.columns=['price', 'volume_linear', 'side_linear']
+                    self.orderbook_linear[symbol] = df
+                elif market_type == 'spot':
+                    df.columns=['price', 'volume_spot', 'side_spot']
+                    self.orderbook_spot[symbol] = df
+        
+        else: # if topic not in sample -> sample from web request
+            symbol = sample['result']['s']
+
+            asks = sample['result']['a']
+            bids = sample['result']['b']
 
             asks_prices = [float(x[0]) for x in asks]
             asks_volumes = [float(x[1]) for x in asks]
@@ -97,6 +126,8 @@ class Arbitrator:
             elif market_type == 'spot':
                 df.columns=['price', 'volume_spot', 'side_spot']
                 self.orderbook_spot[symbol] = df
+
+            #print(df)
     
     # get an update q-data from the stream
     def _update(self, q, market_type):
@@ -123,8 +154,9 @@ class Arbitrator:
         self.run_update_thread(q, market_type)
     
     # need separate to other class
-    def _get_orderbook(self, market_type, quote, limit):
+    def _get_orderbook(self, quote, limit):
         endpoint = 'https://api.bybit.com/v5/market/orderbook'
+        market_type = 'linear'
         params = {
             'category': market_type,
             'symbol': quote,
@@ -132,7 +164,13 @@ class Arbitrator:
         }
         r = requests.get(endpoint, params=params)
         data = json.loads(r.text)
-        print(data)
+        self._parse(data, market_type)
+
+        market_type = 'spot'
+        params['category'] = market_type
+        r = requests.get(endpoint, params=params)
+        data = json.loads(r.text)
+        self._parse(data, market_type)
     
     # get both future and spot orderbooks and assembly it
     def get_pivot_orderbook(srlf, quote):
@@ -183,8 +221,29 @@ class Arbitrator:
 
                         # action
                         print('new quotes!', key)
-                        self._get_orderbook('linear', key, 50)
-                        #self.arbitrator_bot.broadcast(str(key) + ':  ' + str(greater_th_quotes[key]))
+                        self._get_orderbook(key, 50)
+
+                        # create pivot df
+                        df = self.orderbook_spot[key].merge(
+                            self.orderbook_linear[key], 
+                            left_on = 'price', 
+                            right_on = 'price', how = 'outer'
+                        )
+
+                        print(df)
+
+                        if key in self.diffs_historycal:
+                            file_path = self._plotter.create_DOM_report(
+                                df, key,
+                                'spot',
+                                self.diffs_historycal[key],
+                                difference[key]
+                            )
+
+                            print('>>>> ', file_path)
+
+                            self.arbitrator_bot.broadcast(str(key) + ':  ' + str(greater_th_quotes[key]))
+                            self.arbitrator_bot._send_photo(1109752742, file_path, caption=key)
                 
                 target_quotes = greater_th_quotes
 

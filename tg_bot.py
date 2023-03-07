@@ -55,7 +55,7 @@ class Bot:
         
         try:
             r = requests.post(url, params= params, files= files)
-            print(r)
+            print(r.text)
         except Exception as e:
             print(e)
 
