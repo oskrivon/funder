@@ -69,6 +69,10 @@ class Bot:
         for user in self.users:
             self._send(user, str(msg))
 
+    def photo_broadcast(self, path, caption):
+        for user in self.users:
+            self._send_photo(user, path, caption)
+
     def _users_update(self, chat_id):
         #file = open('users.yaml', 'a+')
         if chat_id in self.users:

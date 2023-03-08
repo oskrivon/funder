@@ -204,13 +204,13 @@ class Arbitrator:
         target_quotes = {}
 
         while True:
-            threshold = 1 # threshold for quotes filtration
+            threshold = 0.5 # threshold for quotes filtration
 
             time.sleep(1)
             difference = arbitrator.difference_calculation() # dict x{quote: diff}
 
             if len(difference) > 5: # condition
-                print(difference)
+                print(len(difference))
                 
                 greater_th_quotes = {key: val for key, val in difference.items() if val >= threshold or val <= -1 * threshold}
 
@@ -232,6 +232,7 @@ class Arbitrator:
 
                         print(df)
 
+                        # create picture for pivot DOM and save it
                         if key in self.diffs_historycal:
                             file_path = self._plotter.create_DOM_report(
                                 df, key,
@@ -242,51 +243,29 @@ class Arbitrator:
 
                             print('>>>> ', file_path)
 
-                            self.arbitrator_bot.broadcast(str(key) + ':  ' + str(greater_th_quotes[key]))
-                            self.arbitrator_bot._send_photo(1109752742, file_path, caption=key)
+                            #self.arbitrator_bot.broadcast(str(key) + ':  ' + str(greater_th_quotes[key]))
+                            # add \\ symbols for telegram
+                            caption = f'{str(key)}: {str(target_quotes[key])}'
+                            caption_escape = caption.replace(".", "\\.").replace('-', '\\-')
+                            print(caption_escape)
+
+                            self.arbitrator_bot.photo_broadcast(file_path, caption=caption_escape)
+
+            # check tapget quotes sprad and delete it if less that 80% threshold
+            temporary_dict = {}
+            for key in target_quotes:
+                if abs(difference[key]) > 0.8 * threshold:
+                    temporary_dict[key] = difference[key]
+            
                 
-                target_quotes = greater_th_quotes
+            target_quotes = temporary_dict
 
-                print(target_quotes)
+            difference_sorted = sorted(
+                difference.items(), key=lambda x: (abs(x[1]), x[1]), reverse=True
+            ) # get top 5
 
-                difference_sorted = sorted(
-                    difference.items(), key=lambda x: (abs(x[1]), x[1]), reverse=True
-                ) # get top 5
-
-                print(difference_sorted[:5])
-                print(target_quotes)
-                quotes_for_orderbooks = [x[0] for x in difference_sorted]
-                
-                if not flag: # temporary condition for DOM request !!!
-                    flag = True
-                    for quotation in quotes_for_orderbooks:
-                        print(quotation)
-                        self.run_data_stream([quotation], 'orderbook.50', 'spot', once_flag=True)
-                        self.run_data_stream([quotation], 'orderbook.50', 'linear', once_flag=True)
-
-                if len(self.orderbook_spot) == 5:
-                    if len(self.orderbook_linear) == 5:
-                        if not flag_img_creation:
-                            flag_img_creation = True
-
-                            for key in self.orderbook_spot:
-                                print(key)
-
-                                # create pivot df
-                                df = self.orderbook_spot[key].merge(
-                                    self.orderbook_linear[key], 
-                                    left_on = 'price', 
-                                    right_on = 'price', how = 'outer'
-                                )
-
-                                if key in self.diffs_historycal:
-                                    self._plotter.create_DOM_report(
-                                        df, key,
-                                        'spot',
-                                        self.diffs_historycal[key],
-                                        difference[key]
-                                    )
-                            #print('>>>>', self.orderbook_spot)
+            print(difference_sorted[:5]) 
+            print(target_quotes)
 
             time.sleep(0.5)
 
